@@ -7,6 +7,7 @@
 *.dylib
 bin
 testbin/*
+appcat-sli-exporter
 
 # Test binary, build with `go test -c`
 *.test
@@ -23,3 +24,6 @@ testbin/*
 *.swp
 *.swo
 *~
+
+
+hack/

@@ -19,6 +19,8 @@ package main
 import (
 	"flag"
 	"os"
+	"strconv"
+	"time"
 
 	// Import all Kubernetes client auth plugins (e.g. Azure, GCP, OIDC, etc.)
 	// to ensure that exec-entrypoint and run can make use of them.
@@ -30,8 +32,11 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/healthz"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
+	"sigs.k8s.io/controller-runtime/pkg/metrics"
 
 	"github.com/vshn/appcat-sli-exporter/controllers"
+	"github.com/vshn/appcat-sli-exporter/probes"
+	vshnv1 "github.com/vshn/component-appcat/apis/vshn/v1"
 	//+kubebuilder:scaffold:imports
 )
 
@@ -42,6 +47,7 @@ var (
 
 func init() {
 	utilruntime.Must(clientgoscheme.AddToScheme(scheme))
+	utilruntime.Must(vshnv1.AddToScheme(scheme))
 
 	//+kubebuilder:scaffold:scheme
 }
@@ -55,13 +61,19 @@ func main() {
 	flag.BoolVar(&enableLeaderElection, "leader-elect", false,
 		"Enable leader election for controller manager. "+
 			"Enabling this will ensure there is only one active controller manager.")
+
+	var enableVSHNPostgreSQL bool
+	flag.BoolVar(&enableVSHNPostgreSQL, "vshn-postgresql", getEnvBool("APPCAT_SLI_VSHNPOSTGRESQL"),
+		"Enable probing of VSHNPostgreSQL instances")
+
 	opts := zap.Options{
 		Development: true,
 	}
+	l := zap.New(zap.UseFlagOptions(&opts))
 	opts.BindFlags(flag.CommandLine)
 	flag.Parse()
 
-	ctrl.SetLogger(zap.New(zap.UseFlagOptions(&opts)))
+	ctrl.SetLogger(l)
 
 	mgr, err := ctrl.NewManager(ctrl.GetConfigOrDie(), ctrl.Options{
 		Scheme:                 scheme,
@@ -69,19 +81,31 @@ func main() {
 		Port:                   9443,
 		HealthProbeBindAddress: probeAddr,
 		LeaderElection:         enableLeaderElection,
-		LeaderElectionID:       "0568b594.my.domain",
+		LeaderElectionID:       "05f8b574.appcat.vshn.io",
 	})
 	if err != nil {
 		setupLog.Error(err, "unable to start manager")
 		os.Exit(1)
 	}
+	probeManager := probes.NewManager(l)
 
-	if err = (&controllers.VSHNPostgreSQLReconciler{
-		Client: mgr.GetClient(),
-		Scheme: mgr.GetScheme(),
-	}).SetupWithManager(mgr); err != nil {
-		setupLog.Error(err, "unable to create controller", "controller", "VSHNPostgreSQL")
+	err = metrics.Registry.Register(probeManager.Collector())
+	if err != nil {
+		setupLog.Error(err, "unable to register metrics")
 		os.Exit(1)
+	}
+
+	if enableVSHNPostgreSQL {
+		if err = (&controllers.VSHNPostgreSQLReconciler{
+			Client:             mgr.GetClient(),
+			Scheme:             mgr.GetScheme(),
+			ProbeManager:       &probeManager,
+			StartupGracePeriod: 15 * time.Minute,
+			PostgreDialer:      probes.NewPostgreSQL,
+		}).SetupWithManager(mgr); err != nil {
+			setupLog.Error(err, "unable to create controller", "controller", "VSHNPostgreSQL")
+			os.Exit(1)
+		}
 	}
 	//+kubebuilder:scaffold:builder
 
@@ -99,4 +123,9 @@ func main() {
 		setupLog.Error(err, "problem running manager")
 		os.Exit(1)
 	}
+}
+
+func getEnvBool(key string) bool {
+	b, err := strconv.ParseBool(os.Getenv(key))
+	return err == nil && b
 }
