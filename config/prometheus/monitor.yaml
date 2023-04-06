@@ -13,6 +13,7 @@ spec:
       port: https
       scheme: https
       bearerTokenFile: /var/run/secrets/kubernetes.io/serviceaccount/token
+      honorLabels: true
       tlsConfig:
         insecureSkipVerify: true
   selector:
