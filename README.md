@@ -8,8 +8,9 @@
 [build]: https://github.com/vshn/appcat-sli-exporter/actions?query=workflow%3ATest
 [releases]: https://github.com/vshn/appcat-sli-exporter/releases
 
-The ApppCat SLI Exporter is a Prometheus that automatically detects AppCat services and measures uptime SLIs.
+:warning: This repository and its content has been moved to [appcat](https://github.com/vshn/appcat)
 
+The ApppCat SLI Exporter is a Prometheus that automatically detects AppCat services and measures uptime SLIs.
 
 ## Building
 
